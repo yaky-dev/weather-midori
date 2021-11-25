@@ -1,0 +1,537 @@
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>Weather</title>
+		<style>
+			@font-face {
+				font-family: 'Futura Round Bold';
+				src: url('futura-round-bold.ttf') format('truetype');
+			}
+
+			body {
+				margin: 0;
+				border: 0;
+				padding: 0;
+				overflow: hidden;
+				font-family: 'Futura Round Bold';
+				/* font-weight: bold; */
+			}
+
+			.screen {
+				position: absolute;
+				width: 800px;
+				height: 480px;
+				background-color: black;
+				/* background: linear-gradient(#408040, #404080); */
+			}
+
+			.screen-center {
+				position: absolute;
+				left: 50px;
+				width: 700px;
+				top: 45px;
+				/* border: 1px solid black; */
+			}
+
+			.now-div {
+				display: inline-block;
+				text-align: center;
+				width: 35%;
+				vertical-align: middle;
+				/* margin: 6px; */
+				/* border: 1px solid black; */
+			}
+
+			.now-div>div {
+				margin: 8px;
+			}
+
+			.now-conditions {
+				height: 102px;
+				font-size: 38px;
+			}
+
+			.now-temperature {
+				font-size: 52px;
+			}
+
+			.now-humidity {
+				font-size: 36px;
+			}
+			
+			.forecast-div {
+				display: inline-block;
+				text-align: center;
+				width: 15%;
+				vertical-align: middle;
+				/* border: 1px solid black; */
+			}
+
+			.forecast-div>div {
+				margin: 8px;
+			}
+			
+			.forecast-weekday {
+				font-size: 32px;
+			}
+
+			.forecast-conditions {
+				height: 48px;
+				font-size: 18px;
+			}
+
+			.forecast-temperature {
+				font-size: 28px;
+			}
+			
+			.overlay {
+				position: absolute;
+				width: 800px;
+				height: 480px;
+				background-color: black;
+				opacity: 0.5;
+				z-index: 1;
+			}
+		</style>
+		<script>
+
+			// See https://openweathermap.org/current for Location IDs
+			var locationId = '';
+
+			// Register an account on OpenWeatherMap to get App ID
+			var appId = '';
+
+			var weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+			
+			// Define the functions backwards so Midori can run JS
+			function ToFahrenheit(k) {
+				var f = Math.round(9 / 5 * (k - 273.15) + 32);
+				return f;
+			}
+			
+			function GetConditionsText(conditions) {
+				// Using OpenWeatherMap conditions, create a short, readable conditions text
+				// conditions { id, main, description, icon }
+				// Full list of conditions: https://openweathermap.org/weather-conditions
+				// Midori: use .indexOf instead of .includes
+				
+				// Default to the main condition
+				var conditions_text = conditions.main;
+				
+				// Some unique but important cases
+				// Freezing rain is a type of rain
+				if (conditions.description.indexOf('freezing rain') !== -1) {
+					conditions_text = 'Freezing Rain';
+				}
+				// Sleet is a type of snow
+				if (conditions.description.indexOf('sleet') !== -1) {
+					conditions_text = 'Sleet';
+				}
+				// Overcast is a type of clouds
+				if (conditions.description.indexOf('overcast') !== -1) {
+					conditions_text = 'Overcast';
+				}
+				
+				// Light / Heavy
+				if (conditions.description.indexOf('light') !== -1) {
+					conditions_text = 'Light ' + conditions_text;
+				} else if (conditions.description.indexOf('heavy') !== -1) {
+					conditions_text = 'Heavy ' + conditions_text;
+				}
+				
+				return conditions_text;
+			}
+
+			function GetColorFromTemperature(t) {
+				// Determine temperature-related color
+				// Temperature is in Fahrenheit
+				// Temp	R	G	B	Color
+				// 90	255	0	0	Red
+				// 75	255	128	0	Orange
+				// 60	255	255	0	Yellow	
+				// 45	0	255	0	Green
+				// 30	0	255	255	Cyan
+				// 15	255	255	255	White
+				// 0	255	0	255	Purple
+				// -15	0	0	255	Blue
+				
+				// Get smooth transitions
+				var r = 0;
+				if (t >= 60) {
+					r = 255; 
+				} else if (t >= 45) {
+					r = (t-45)*255/15;
+				} else if (t >= 30) {
+					r = 0;
+				} else if (t >= 15) {
+					r = 255-(t-15)*255/15;
+				} else if (t >= 0) {
+					r = 255;
+				} else if (t >= -15) {
+					r = (t+15)*255/15;
+				} else {
+					r = 0;
+				}
+				r = Math.floor(r);
+
+				var g = 0;
+				if (t >= 90) {
+					g = 0;
+				} else if (t >= 60) {
+					g = 255-(t-60)*255/30;
+				} else if (t >= 15) {
+					g = 255;
+				} else if (t >= 0) {
+					g = t*255/15;
+				} else {
+					g = 0;
+				}
+				g = Math.floor(g);
+				
+				var b = 0;
+				if (t >= 45) {
+					b = 0;
+				} else if (t >= 30) {
+					b = 255-(t-30)*255/15;
+				} else {
+					b = 255;
+				}
+				b = Math.floor(b);
+
+				var color = 'rgb(' + r + ',' + g + ',' + b + ')';
+				return color;
+			}
+
+			function GetIcon(conditions) {
+				// Using OpenWeatherMap conditions, determine an icon to use
+				// conditions { id, main, description, icon }
+				// Midori: use .indexOf instead of .includes
+				
+				// Default to error
+				var icon = 'error';
+				
+				if (conditions.main == "Thunderstorm") {
+					if (conditions.description.indexOf('heavy') !== -1) {
+						icon = 'storm-heavy';
+					} else {
+						icon = 'storm';
+					}
+				} else if (conditions.main == "Drizzle" || conditions.main == "Rain") {
+					if (conditions.description.indexOf('freezing') !== -1) {
+						icon = 'rain-freezing';
+					} else if (conditions.description.indexOf('light') !== -1) {
+						icon = 'rain-light';
+					} else if (conditions.description.indexOf('heavy') !== -1) {
+						icon = 'rain-heavy';
+					} else {
+						icon = 'rain';
+					}
+				} else if (conditions.main == "Snow") {
+					if (conditions.description.indexOf('sleet') !== -1) {
+						icon = 'sleet';
+					} else if (conditions.description.indexOf('light') !== -1) {
+						icon = 'snow-light';
+					} else if (conditions.description.indexOf('heavy') !== -1) {
+						icon = 'snow-heavy';
+					} else {
+						icon = 'snow';
+					}
+				} else if (conditions.main == "Mist" 
+						|| conditions.main == "Smoke" 
+						|| conditions.main == "Haze" 
+						|| conditions.main == "Dust" 
+						|| conditions.main == "Fog" 
+						|| conditions.main == "Sand" 
+						|| conditions.main == "Ash" 
+						|| conditions.main == "Squall") {
+					if (conditions.icon.indexOf('n') !== -1) {
+						icon = 'fog-night';
+					} else {
+						icon = 'fog-day';
+					}
+				} else if (conditions.main == "Tornado") {
+					icon = 'tornado';
+				} else if (conditions.main == "Clear") {
+					if (conditions.icon.indexOf('n') !== -1) {
+						icon = 'clear-night';
+					} else {
+						icon = 'clear-day';
+					}
+				} else if (conditions.main == "Clouds") {
+					if (conditions.icon.indexOf('04') !== -1) {
+						// Icon 04d or 04n is heavy clouds
+						icon = 'cloudy';
+					} else {
+						// Few or scattered clouds
+						if (conditions.icon.indexOf('n') !== -1) {
+							icon = 'partly-cloudy-night';
+						} else {
+							icon = 'partly-cloudy-day';
+						}
+					}
+				}
+				icon = 'icons/' + icon + '.png';
+
+				return icon;
+			}
+
+			function DisplayWeather(response) {
+				// Parse the JSON response
+				var weather = JSON.parse(response);
+				
+				// OpenWeatherMap provides temperature in Kelvin
+				// Convert to Fahrenheit
+				var temp = ToFahrenheit(weather.main.temp);
+
+				// Humidity
+				var humidity = weather.main.humidity;
+				
+				// Background color - based on current temperature
+				document.getElementById('screen').style.backgroundColor = GetColorFromTemperature(temp);
+                
+				// Current conditions
+				document.getElementById('now-conditions').innerHTML = GetConditionsText(weather.weather[0]);
+				
+				// Icon - based on current conditions
+				document.getElementById('now-icon').src = GetIcon(weather.weather[0]);
+				
+				// Current temperature
+				document.getElementById('now-temperature').innerHTML = temp + '°F';
+
+				// Current humidity
+				document.getElementById('now-humidity').innerHTML = humidity + '%';
+			}
+
+			function DisplayWeatherError(errorText) {
+				// Show error in place of current conditions
+				document.getElementById('now-icon').src = 'icons/error.png';
+				document.getElementById('now-conditions').innerHTML = errorText;
+			}
+
+			function DisplayForecast(response) {
+				// Forecast shows a forecast for 5 days in 3-hour increments
+				// Elements: 
+				// 0-7   = tomorrow
+				// 8-15  = day after tomorrow
+				// 16-23 = 3 days from today
+				// 24-31 = 4 days from today
+				// 31-39 = 5 days from today
+				
+				// Parse the JSON response
+				var forecast = JSON.parse(response);
+				
+				// Determine which day to display for the forecast
+				var today = new Date();
+				var weekday = today.getDay();
+				
+				for(var i=0; i<4; i++) {
+					var day = (8 * i) + 3;
+					var night = (8 * i) + 7; 
+					// Day of the week
+					document.getElementById('forecast-' + i + '-weekday').innerHTML = weekdays[(weekday+i+1) % 7];
+					// Day (noon)
+					document.getElementById('forecast-' + i + '-day-conditions').innerHTML = GetConditionsText(forecast.list[day].weather[0]);
+					document.getElementById('forecast-' + i + '-day-icon').src = GetIcon(forecast.list[day].weather[0]);
+					document.getElementById('forecast-' + i + '-day-temperature').innerHTML = ToFahrenheit(forecast.list[day].main.temp) + '°F';
+					// Night (midnight)
+					document.getElementById('forecast-' + i + '-night-conditions').innerHTML = GetConditionsText(forecast.list[night].weather[0]);
+					document.getElementById('forecast-' + i + '-night-icon').src = GetIcon(forecast.list[night].weather[0]);
+					document.getElementById('forecast-' + i + '-night-temperature').innerHTML = ToFahrenheit(forecast.list[night].main.temp) + '°F';
+				}
+			}
+			
+			function DisplayForecastError(errorText) {
+				// Show error in place of current conditions
+				document.getElementById('forecast-0-icon').src = 'icons/error.png';
+				document.getElementById('forecast-0-conditions').innerHTML = errorText;
+			}
+			
+			function SetBrightness() {
+				// 08:00 - 18:00 	1.0
+				// 19:00 			0.75
+				// 20:00 - 06:00 	0.5
+				// 07:00 			0.75
+				var now = new Date();
+				var hour = now.getHours();
+				var opacity = 0.0; // inverse of brightness
+				if (hour >= 8 && hour <= 18) {
+					// day
+					opacity = 0.0;
+				} else if (hour == 7 || hour == 19) {
+					// morning and evening
+					opacity = 0.25;
+				} else {
+					// night
+					opacity = 0.5;
+				}
+				var overlay = document.getElementById("overlay");
+				overlay.style.opacity = opacity;
+			}
+			
+			function RefreshWeather() {
+				// Refresh weather from OpenWeatherMap
+				// There are 2 APIs: one for current weather and one for a 5-day forecast
+				
+				// Weather
+				var weatherRequest = new XMLHttpRequest();
+				weatherRequest.onreadystatechange = function() {
+					if (weatherRequest.readyState === XMLHttpRequest.DONE) {
+						if (weatherRequest.status === 200) {
+							// Success
+							DisplayWeather(weatherRequest.responseText);
+						} else {
+							// Error
+							DisplayWeatherError('Status ' + weatherRequest.status);
+						}
+					}
+				}
+				var weatherApiUrl = 'http://api.openweathermap.org/data/2.5/weather?id=' + locationId + '&appid=' + appId;
+				weatherRequest.open('GET', weatherApiUrl);
+				weatherRequest.send();
+
+				// Forecast
+				var forecastRequest = new XMLHttpRequest();
+				forecastRequest.onreadystatechange = function() {
+					if (forecastRequest.readyState === XMLHttpRequest.DONE) {
+						if (forecastRequest.status === 200) {
+							// Success
+							DisplayForecast(forecastRequest.responseText);
+						} else {
+							// Error
+							DisplayForecastError('Status ' + forecastRequest.status);
+						}
+					}
+				}
+				var forecastApiUrl = 'http://api.openweathermap.org/data/2.5/forecast?id=' + locationId + '&appid=' + appId;
+				forecastRequest.open('GET', forecastApiUrl);
+				forecastRequest.send();
+
+				// Update weather at top and bottom of every hour
+				var minutesLeft = 30 - new Date().getMinutes() % 30;
+				var millisecondsLeft = minutesLeft * 60000;
+				window.setTimeout(function() {
+					RefreshWeather();
+					SetBrightness();
+				}, millisecondsLeft);
+			}
+
+			// Run at startup
+			RefreshWeather();
+
+		</script>
+	</head>
+	<body>
+		<div id="screen" class="screen">
+			<div class="screen-center">
+				<div class="now-div">
+					<div>
+						<img id="now-icon" src="icons/clear-day.png">
+					</div>
+					<div class="now-temperature">
+						<span id="now-temperature">72</span>
+					</div>
+					<div class="now-humidity">
+						<span id="now-humidity">50% 🌢</span>
+					</div>
+					<div class="now-conditions">
+						<span id="now-conditions">Clear</span>
+					</div>
+				</div>
+				<div class="forecast-div">
+					<div class="forecast-weekday">
+						<span id="forecast-0-weekday">0</span>
+					</div>
+					<div>
+						<img id="forecast-0-day-icon" src="icons/clear-day.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-0-day-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-0-day-conditions">Clear</span>
+					</div>
+					<div>
+						<img id="forecast-0-night-icon" src="icons/clear-night.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-0-night-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-0-night-conditions">Clear</span>
+					</div>
+				</div>
+				<div class="forecast-div">
+					<div class="forecast-weekday">
+						<span id="forecast-1-weekday">1</span>
+					</div>
+					<div>
+						<img id="forecast-1-day-icon" src="icons/clear-day.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-1-day-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-1-day-conditions">Clear</span>
+					</div>
+					<div>
+						<img id="forecast-1-night-icon" src="icons/clear-night.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-1-night-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-1-night-conditions">Clear</span>
+					</div>
+				</div>
+				<div class="forecast-div">
+					<div class="forecast-weekday">
+						<span id="forecast-2-weekday">2</span>
+					</div>
+					<div>
+						<img id="forecast-2-day-icon" src="icons/clear-day.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-2-day-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-2-day-conditions">Clear</span>
+					</div>
+					<div>
+						<img id="forecast-2-night-icon" src="icons/clear-night.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-2-night-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-2-night-conditions">Clear</span>
+					</div>
+				</div>
+				<div class="forecast-div">
+					<div class="forecast-weekday">
+						<span id="forecast-3-weekday">3</span>
+					</div>
+					<div>
+						<img id="forecast-3-day-icon" src="icons/clear-day.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-3-day-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-3-day-conditions">Clear</span>
+					</div>
+					<div>
+						<img id="forecast-3-night-icon" src="icons/clear-night.png"  width="64px" height="64px">
+					</div>
+					<div class="forecast-temperature">
+						<span id="forecast-3-night-temperature">78</span>
+					</div>
+					<div class="forecast-conditions">
+						<span id="forecast-3-night-conditions">Clear</span>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div class="overlay" id="overlay">
+		</div>
+	</body>
+</html>
